@@ -1,10 +1,10 @@
 # AndroidVLC  基于vlc的视频播放器
 v1.0 实现视频正常播放，横竖屏切换；可以调节音量、亮度
 
-如果不想编译的话,可直接下载AndroidDemo,Demo为AndroidStudio开发环境。若想自己编译可去官方下载源码。接下来简单介绍API的部分调用接口:(1、publicvoidplayMRL(Stringmrl)对应MediaPlayer的setDataSource(path),可以读取本地文件和流媒体文件,读取本地文件要加”file://”+path,读取流媒体就可以直接输入”http://“即可。(2、publicnativevoidplay()开始(3、p
-如果不想编译的话,可直接下载 Android Demo,Demo为Android Studio开发环境。若想自己编译可去官方下载源码。
-
-
+如果不想编译的话,可直接下载AndroidDemo,Demo为AndroidStudio开发环境。若想自己编译可去官方下载源码。接下来简单介绍API的部分调用接口:
+(1、publicvoidplayMRL(Stringmrl)对应MediaPlayer的setDataSource(path),可以读取本地文件和流媒体文件,读取本地文件要加”file://”+path,读取流媒体就可以直接输入”http://“即可。
+(2、publicnativevoidplay()开始
+(3、如果不想编译的话,可直接下载 Android Demo,Demo为Android Studio开发环境。若想自己编译可去官方下载源码。
 
 
 ####接下来简单介绍API 的部分调用接口: 

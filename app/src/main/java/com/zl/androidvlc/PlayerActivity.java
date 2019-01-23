@@ -9,9 +9,11 @@ import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Message;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.GestureDetector;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
@@ -38,6 +40,8 @@ import java.util.HashMap;
 import androidx.core.view.MotionEventCompat;
 import butterknife.BindView;
 
+import static com.zl.androidvlc.utils.StringUtils.generateTime;
+
 /**
  * 项目名称：AndroidVLC
  * 类描述：
@@ -47,7 +51,9 @@ import butterknife.BindView;
  * 修改时间：2019/1/16 16:11
  * 修改备注：
  */
-public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener, View.OnClickListener {
+public class
+
+PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener, View.OnClickListener {
     @BindView(R.id.iv_play)
     ImageView ivPlay;
     @BindView(R.id.tv_cur_time)
@@ -74,8 +80,8 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     private static final String SAMPLE_URL = "/storage/emulated/0/videos/1.flv";
 
     //        private static final String VIDEO_URL = "http://www.zzguifan.com:8666/system/filehandle.aspx?62999f1f12ba78a2-4a4252135d81a2b2&f=5710223";
-    private static final String VIDEO_URL = "http://flv2.bn.netease.com/videolib3/1505/29/DCNOo7461/SD/DCNOo7461-mobile.mp4";
-//    private static final String VIDEO_URL = "http://xunleib.zuida360.com/1812/表象之下.BD1280高清中英双字版.mp4";
+//    private static final String VIDEO_URL = "http://flv2.bn.netease.com/videolib3/1505/29/DCNOo7461/SD/DCNOo7461-mobile.mp4";
+    private static final String VIDEO_URL = "http://xunleib.zuida360.com/1812/表象之下.BD1280高清中英双字版.mp4";
 
     @BindView(R.id.video_surface_frame)
     FrameLayout mVideoSurfaceFrame;
@@ -100,7 +106,23 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
 
     private LibVLC mLibVLC;
     private MediaPlayer mMediaPlayer;
-    private final Handler mHandler = new Handler();
+    private final Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+            switch (msg.what) {
+                case MSG_UPDATE_SEEK:
+                    final int pos = setProgress();
+                    if (!mIsSeeking && mIsShowBar && mMediaPlayer.isPlaying()) {
+                        // 这里会重复发送MSG，已达到实时更新 Seek 的效果
+                        msg = obtainMessage(MSG_UPDATE_SEEK);
+                        sendMessageDelayed(msg, 1000 - (pos % 1000));
+                    }
+                    break;
+
+            }
+        }
+    };
     private View.OnLayoutChangeListener mOnLayoutChangeListener = null;
     private static final int SURFACE_BEST_FIT = 0;
     private static final int SURFACE_FIT_SCREEN = 1;
@@ -120,12 +142,20 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     private long totalTime = 0;
 
     private Uri uri;
-
+    // 是否正在拖拽进度条
+    private boolean mIsSeeking;
+    // 进度条最大值
+    private static final int MAX_VIDEO_SEEK = 1000;
+    // 目标进度
+    private long mTargetPosition = INVALID_VALUE;
+    // 当前进度
+    private int mCurPosition = INVALID_VALUE;
     // 无效变量
     private static final int INVALID_VALUE = -1;
     // 默认隐藏控制栏时间
     private static final int DEFAULT_HIDE_TIMEOUT = 5000;
-
+    // 更新进度消息
+    private static final int MSG_UPDATE_SEEK = 10086;
     // 音量控制
     private AudioManager mAudioManager;
     // 手势控制
@@ -139,7 +169,8 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
 
     // 进来还未播放
     private boolean mIsNeverPlay = true;
-
+    // 是否显示控制栏
+    private boolean mIsShowBar = true;
 
     @Override
     public int setLayoutView() {
@@ -150,36 +181,48 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     @Override
     public void initView() {
         seekBarTime.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            private long curPosition;
+
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                try {
-                    if (!mMediaPlayer.isSeekable() || totalTime == 0) {
-                        return;
-                    }
-
-                    if (progress > totalTime) {
-                        progress = (int) totalTime;
-                    }
-
-                    if (fromUser) {
-                        mMediaPlayer.setTime((long) progress);
-                        tvCurrentTime.setText(SystemUtil.getMediaTime(progress));
-                    }
-                } catch (Exception e) {
-                    Log.d("vlc-time", e.toString());
+                if (!fromUser) {
+                    // We're not interested in programmatically generated changes to
+                    // the progress bar's position.
+                    return;
                 }
+                long duration = totalTime;
+                // 计算目标位置
+                mTargetPosition = (duration * progress) / MAX_VIDEO_SEEK;
+                String desc;
+                // 对比当前位置来显示快进或后退
+                if (mTargetPosition > curPosition) {
+                    desc = generateTime(mTargetPosition) + "/" + generateTime(duration);
+                } else {
+                    desc = generateTime(mTargetPosition) + "/" + generateTime(duration);
+                }
+                setFastForward(desc);
             }
 
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
-
+                mIsSeeking = true;
+                _showControlBar(3600000);
+                mHandler.removeMessages(MSG_UPDATE_SEEK);
+                curPosition = mMediaPlayer.getTime();
             }
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-
-
+                hideTouchView();
+                mIsSeeking = false;
+                // 视频跳转
+                mMediaPlayer.setTime(mTargetPosition);
+                mTargetPosition = INVALID_VALUE;
+                setProgress();
+                _showControlBar(DEFAULT_HIDE_TIMEOUT);
             }
+
+
         });
         // 声音
         mAudioManager = (AudioManager) this.getSystemService(Context.AUDIO_SERVICE);
@@ -215,6 +258,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     @Override
     protected void onStart() {
         super.onStart();
+
         IVLCVout ivlcVout = mMediaPlayer.getVLCVout();
         ivlcVout.setVideoView(surfaceView);
         ivlcVout.attachViews(this);
@@ -233,6 +277,8 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
 
         if (mIsNeverPlay) {
             mIsNeverPlay = false;
+            mIsShowBar = false;
+            mLoadingView.setVisibility(View.VISIBLE);
         }
         if (mOnLayoutChangeListener == null) {
             mOnLayoutChangeListener = new View.OnLayoutChangeListener() {
@@ -272,7 +318,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
 
                     //播放结束
                     if (mMediaPlayer.getPlayerState() == Media.State.Ended) {
-
+                        mLoadingView.setVisibility(View.GONE);
                         stop();
                     }
                 } catch (Exception e) {
@@ -306,6 +352,15 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         setSize(mVideoWidth, mVideoHeight);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        //拦截音量键
+        if (handleVolumeKey(keyCode)) {
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     private void changeMediaPlayerLayout(int displayW, int displayH) {
@@ -496,8 +551,6 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     public void takePicture() {
         MediaMetadataRetriever mmr = new MediaMetadataRetriever();
         // 设置数据源，有多种重载，这里用本地文件的绝对路径
-//        mmr.setDataSource(SAMPLE_URL);
-//        Bitmap frameBitmap = mmr.getFrameAtTime(time);
         mmr.setDataSource(SAMPLE_URL, new HashMap<>());
         Bitmap frameBitmap = mmr.getFrameAtTime();
         mmr.release();
@@ -582,14 +635,14 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     private Runnable mHideTouchViewRunnable = new Runnable() {
         @Override
         public void run() {
-            _hideTouchView();
+            hideTouchView();
         }
     };
 
     /**
      * 隐藏触摸视图
      */
-    private void _hideTouchView() {
+    private void hideTouchView() {
         if (mFlTouchLayout.getVisibility() == View.VISIBLE) {
             mTvFastForward.setVisibility(View.GONE);
             mTvVolume.setVisibility(View.GONE);
@@ -604,31 +657,20 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     private Runnable mHideBarRunnable = new Runnable() {
         @Override
         public void run() {
-            _hideAllView(false);
+            hideAllView(false);
         }
     };
 
     /**
      * 隐藏除视频外所有视图
      */
-    private void _hideAllView(boolean isTouchLock) {
+    private void hideAllView(boolean isTouchLock) {
 //        mPlayerThumb.setVisibility(View.GONE);
         mFlTouchLayout.setVisibility(View.GONE);
         titleBar.setVisibility(View.GONE);
         llBottomBar.setVisibility(View.GONE);
 
     }
-
-
-    //触摸监听
-//    View.OnTouchListener mPlayerTouchListener = new View.OnTouchListener() {
-//
-//        @Override
-//        public boolean onTouch(View v, MotionEvent event) {
-//            return mGestureDetector.onTouchEvent(event);
-//        }
-//    };
-
 
     View.OnTouchListener mPlayerTouchListener = new View.OnTouchListener() {
         // 触摸模式：正常、无效、缩放旋转
@@ -651,7 +693,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
                     return true;
                 }
                 if (MotionEventCompat.getActionMasked(event) == MotionEvent.ACTION_UP) {
-                    _endGesture();
+                    endGesture();
                 }
             }
             return false;
@@ -706,13 +748,13 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
                 }
 
                 if (isLandscape) {
-                    _onProgressSlide(-deltaX / surfaceView.getWidth());
+                    onProgressSlide(-deltaX / surfaceView.getWidth());
                 } else {
                     float percent = deltaY / surfaceView.getHeight();
                     if (isVolume) {
-                        _onVolumeSlide(percent);
+                        onVolumeSlide(percent);
                     } else {
-                        _onBrightnessSlide(percent);
+                        onBrightnessSlide(percent);
                     }
                 }
             }
@@ -740,14 +782,13 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
             if (mIsNeverPlay) {
                 return true;
             }
-//            if (!mIsForbidTouch) {
+
             _refreshHideRunnable();
             if (mMediaPlayer.isPlaying()) {
                 pause();
             } else {
                 play();
             }
-//            }
             return true;
         }
     };
@@ -757,29 +798,29 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
      *
      * @param percent 拖拽百分比
      */
-    private void _onProgressSlide(float percent) {
-//        int position = mVideoView.getCurrentPosition();
-//        long duration = mVideoView.getDuration();
-//        // 单次拖拽最大时间差为100秒或播放时长的1/2
-//        long deltaMax = Math.min(100 * 1000, duration / 2);
-//        // 计算滑动时间
-//        long delta = (long) (deltaMax * percent);
-//        // 目标位置
-//        mTargetPosition = delta + position;
-//        if (mTargetPosition > duration) {
-//            mTargetPosition = duration;
-//        } else if (mTargetPosition <= 0) {
-//            mTargetPosition = 0;
-//        }
-//        int deltaTime = (int) ((mTargetPosition - position) / 1000);
-//        String desc;
-//        // 对比当前位置来显示快进或后退
-//        if (mTargetPosition > position) {
-//            desc = generateTime(mTargetPosition) + "/" + generateTime(duration) ;
-//        } else {
-//            desc = generateTime(mTargetPosition) + "/" + generateTime(duration) ;
-//        }
-//        _setFastForward(desc);
+    private void onProgressSlide(float percent) {
+        int position = (int) mMediaPlayer.getTime();
+        long duration = mMediaPlayer.getLength();
+        // 单次拖拽最大时间差为100秒或播放时长的1/2
+        long deltaMax = Math.min(100 * 1000, duration / 2);
+        // 计算滑动时间
+        long delta = (long) (deltaMax * percent);
+        // 目标位置
+        mTargetPosition = delta + position;
+        if (mTargetPosition > duration) {
+            mTargetPosition = duration;
+        } else if (mTargetPosition <= 0) {
+            mTargetPosition = 0;
+        }
+
+        String desc;
+        // 对比当前位置来显示快进或后退
+        if (mTargetPosition > position) {
+            desc = generateTime(mTargetPosition) + "/" + generateTime(duration);
+        } else {
+            desc = generateTime(mTargetPosition) + "/" + generateTime(duration);
+        }
+        setFastForward(desc);
     }
 
     /**
@@ -787,7 +828,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
      *
      * @param volume
      */
-    private void _setVolumeInfo(int volume) {
+    private void setVolumeInfo(int volume) {
         if (mFlTouchLayout.getVisibility() == View.GONE) {
             mFlTouchLayout.setVisibility(View.VISIBLE);
         }
@@ -802,7 +843,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
      *
      * @param percent
      */
-    private void _onVolumeSlide(float percent) {
+    private void onVolumeSlide(float percent) {
         if (mCurVolume == INVALID_VALUE) {
             mCurVolume = mAudioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
             if (mCurVolume < 0) {
@@ -818,16 +859,33 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
         // 变更声音
         mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0);
         // 变更进度条
-        _setVolumeInfo(index);
+        setVolumeInfo(index);
     }
 
+    /**
+     * 处理音量键，避免外部按音量键后导航栏和状态栏显示出来退不回去的状态
+     *
+     * @param keyCode
+     * @return
+     */
+    public boolean handleVolumeKey(int keyCode) {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            setVolume(true);
+            return true;
+        } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            setVolume(false);
+            return true;
+        } else {
+            return false;
+        }
+    }
 
     /**
      * 递增或递减音量，量度按最大音量的 1/15
      *
      * @param isIncrease 递增或递减
      */
-    private void _setVolume(boolean isIncrease) {
+    private void setVolume(boolean isIncrease) {
         int curVolume = mAudioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
         if (isIncrease) {
             curVolume += mMaxVolume / 15;
@@ -842,7 +900,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
         // 变更声音
         mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, curVolume, 0);
         // 变更进度条
-        _setVolumeInfo(curVolume);
+        setVolumeInfo(curVolume);
         mHandler.removeCallbacks(mHideTouchViewRunnable);
         mHandler.postDelayed(mHideTouchViewRunnable, 1000);
     }
@@ -852,7 +910,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
      *
      * @param brightness
      */
-    private void _setBrightnessInfo(float brightness) {
+    private void setBrightnessInfo(float brightness) {
         if (mFlTouchLayout.getVisibility() == View.GONE) {
             mFlTouchLayout.setVisibility(View.VISIBLE);
         }
@@ -867,7 +925,7 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
      *
      * @param percent
      */
-    private void _onBrightnessSlide(float percent) {
+    private void onBrightnessSlide(float percent) {
         if (mCurBrightness < 0) {
             mCurBrightness = this.getWindow().getAttributes().screenBrightness;
             if (mCurBrightness < 0.0f) {
@@ -883,26 +941,90 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
         } else if (attributes.screenBrightness < 0.01f) {
             attributes.screenBrightness = 0.01f;
         }
-        _setBrightnessInfo(attributes.screenBrightness);
+        setBrightnessInfo(attributes.screenBrightness);
         this.getWindow().setAttributes(attributes);
+    }
+
+    /**
+     * 更新进度条
+     *
+     * @return
+     */
+    private int setProgress() {
+        if (mMediaPlayer == null || mIsSeeking) {
+            return 0;
+        }
+        // 视频播放的当前进度
+        int position = (int) mMediaPlayer.getTime();
+        // 视频总的时长
+        long duration = mMediaPlayer.getLength();
+        if (duration > 0) {
+            // 转换为 Seek 显示的进度值
+            long pos = (long) MAX_VIDEO_SEEK * position / duration;
+            seekBarTime.setProgress((int) pos);
+        }
+        // 获取缓冲的进度百分比，并显示在 Seek 的次进度
+        int percent = MediaPlayer.Event.Buffering;
+
+        seekBarTime.setSecondaryProgress(percent);
+        // 更新播放时间
+        tvCurrentTime.setText(generateTime(position));
+        tvVideoTitle.setText(generateTime(duration));
+        // 返回当前播放进度
+        return position;
+    }
+
+    /**
+     * 设置快进
+     *
+     * @param time
+     */
+    private void setFastForward(String time) {
+        if (mFlTouchLayout.getVisibility() == View.GONE) {
+            mFlTouchLayout.setVisibility(View.VISIBLE);
+        }
+        if (mTvFastForward.getVisibility() == View.GONE) {
+            mTvFastForward.setVisibility(View.VISIBLE);
+        }
+        mTvFastForward.setText(time);
     }
 
     /**
      * 手势结束调用
      */
-    private void _endGesture() {
-//        if (mTargetPosition >= 0 && mTargetPosition != mVideoView.getCurrentPosition()) {
-//            // 更新视频播放进度
-//            seekTo((int) mTargetPosition);
-//            mPlayerSeek.setProgress((int) (mTargetPosition * MAX_VIDEO_SEEK / mVideoView.getDuration()));
-//            mTargetPosition = INVALID_VALUE;
-//        }
+    private void endGesture() {
+        if (mTargetPosition >= 0 && mTargetPosition != mMediaPlayer.getTime()) {
+            // 更新视频播放进度
+            mMediaPlayer.setTime(mTargetPosition);
+            seekBarTime.setProgress((int) (mTargetPosition * MAX_VIDEO_SEEK / mMediaPlayer.getLength()));
+            mTargetPosition = INVALID_VALUE;
+        }
         // 隐藏触摸操作显示图像
-        _hideTouchView();
+        hideTouchView();
         _refreshHideRunnable();
         mCurVolume = INVALID_VALUE;
         mCurBrightness = INVALID_VALUE;
     }
+
+    /**
+     * 显示控制栏
+     *
+     * @param timeout 延迟隐藏时间
+     */
+    private void _showControlBar(int timeout) {
+        if (!mIsShowBar) {
+            setProgress();
+            mIsShowBar = true;
+        }
+//        _setControlBarVisible(true);
+        mHandler.sendEmptyMessage(MSG_UPDATE_SEEK);
+        // 先移除隐藏控制栏 Runnable，如果 timeout=0 则不做延迟隐藏操作
+        mHandler.removeCallbacks(mHideBarRunnable);
+        if (timeout != 0) {
+            mHandler.postDelayed(mHideBarRunnable, timeout);
+        }
+    }
+
 
     /**
      * 刷新隐藏控制栏的操作
@@ -913,6 +1035,10 @@ public class PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoL
     }
 
     private void play() {
+        if (mIsNeverPlay) {
+            mIsNeverPlay = false;
+            mIsShowBar = false;
+        }
         mMediaPlayer.play();
         ivPlay.setImageResource(R.mipmap.ic_video_pause);
     }

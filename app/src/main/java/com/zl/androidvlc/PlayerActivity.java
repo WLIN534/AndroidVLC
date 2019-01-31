@@ -19,11 +19,13 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.AdapterView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -78,14 +80,17 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
     ImageView ivFirsrImage;
     @BindView(R.id.iv_player_lock)
     ImageView mIvPlayerLock;
+    @BindView(R.id.sp_rate)
+    Spinner spRate;//倍速
 
 
     private static final String TAG = "PlayerActivity";
     private static final String SAMPLE_URL = "/storage/emulated/0/videos/1.flv";
+    private static final String VIDEO_URL = "/storage/emulated/0/videos/1.flv";
 
     //        private static final String VIDEO_URL = "http://www.zzguifan.com:8666/system/filehandle.aspx?62999f1f12ba78a2-4a4252135d81a2b2&f=5710223";
 //    private static final String VIDEO_URL = "http://flv2.bn.netease.com/videolib3/1505/29/DCNOo7461/SD/DCNOo7461-mobile.mp4";
-    private static final String VIDEO_URL = "http://xunleib.zuida360.com/1812/表象之下.BD1280高清中英双字版.mp4";
+//    private static final String VIDEO_URL = "http://xunleib.zuida360.com/1812/表象之下.BD1280高清中英双字版.mp4";
 
     @BindView(R.id.video_surface_frame)
     FrameLayout mVideoSurfaceFrame;
@@ -196,6 +201,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
     private OrientationEventListener mOrientationListener;
     // 锁屏
     private boolean mIsForbidTouch = false;
+
     @Override
     public int setLayoutView() {
         return R.layout.activity_player;
@@ -248,6 +254,31 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
 
 
         });
+        // 设置倍速 获取string.xml的资源文件的数组
+        String[] rate = getResources().getStringArray(R.array.rate);
+        SpinnerArrayAdapter adapter = new SpinnerArrayAdapter(this, rate);
+        adapter.setDropDownViewResource(R.layout.support_simple_spinner_dropdown_item);
+        spRate.setAdapter(adapter);
+        spRate.setSelection(rate.length - 1, true);
+        spRate.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                //设置倍速
+                if (position != rate.length - 1) {
+                    float rateNum = Float.valueOf(rate[position].substring(0, rate[position].length() - 1));
+                    mMediaPlayer.setRate(rateNum);
+                } else {
+                    mMediaPlayer.setRate(1);
+                }
+
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+
+            }
+        });
+
         // 声音
         mAudioManager = (AudioManager) this.getSystemService(Context.AUDIO_SERVICE);
         mMaxVolume = mAudioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
@@ -343,6 +374,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
                         seekBarTime.setSecondaryProgress((int) event.getBuffering());//缓冲进度
                     }
 
+
                     seekBarTime.setProgress((int) event.getTimeChanged());//播放进度
                     tvCurrentTime.setText(SystemUtil.getMediaTime((int) event.getTimeChanged()));
 
@@ -384,7 +416,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         setSize(mVideoWidth, mVideoHeight);
         if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
             _setFullScreen(true);
-        }else if (newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) {
+        } else if (newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) {
             _setFullScreen(false);
         }
         _refreshOrientationEnable();
@@ -401,26 +433,26 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
 
     /**
      * 回退、全屏时返回竖屏
-     *
      */
     @Override
     public void onBackPressed() {
-        if (mIsAlwaysFullScreen){
+        if (mIsAlwaysFullScreen) {
             exit();
             return;
-        }else if (mIsFullscreen){
+        } else if (mIsFullscreen) {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
             if (mIsForbidTouch) {
                 // 锁住状态则解锁
                 mIsForbidTouch = false;
                 mIvPlayerLock.setSelected(false);
-//                _setControlBarVisible(mIsShowBar);
+                _setControlBarVisible(mIsShowBar);
             }
             return;
         }
 
         super.onBackPressed();
     }
+
     /**
      * 从总显示全屏状态退出处理{ alwaysFullScreen()}
      */
@@ -432,8 +464,6 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
             finish();
         }
     }
-
-
 
 
     private void changeMediaPlayerLayout(int displayW, int displayH) {
@@ -603,6 +633,8 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
     @Override
     public void onNewVideoLayout(IVLCVout vlcVout, int width, int height, int visibleWidth,
                                  int visibleHeight, int sarNum, int sarDen) {
+        mLoadingView.setVisibility(View.GONE);
+
         totalTime = mMediaPlayer.getLength();
         seekBarTime.setMax((int) totalTime);
         tvTotalTime.setText(SystemUtil.getMediaTime((int) totalTime));
@@ -646,10 +678,13 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
                 }
                 break;
             case R.id.iv_fullscreen:
-                if (WindowUtils.getScreenOrientation(this) == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
-                    this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-                } else {
-                    this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                if (!mIsNeverPlay) {
+                    //如果还没有开始播放，点击全屏按钮没反应
+                    if (WindowUtils.getScreenOrientation(this) == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+                        this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                    } else {
+                        this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                    }
                 }
                 break;
             case R.id.iv_player_lock:
@@ -747,7 +782,10 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         mFlTouchLayout.setVisibility(View.GONE);
         titleBar.setVisibility(View.GONE);
         llBottomBar.setVisibility(View.GONE);
-        mIvPlayerLock.setVisibility(View.GONE);
+        if (!isTouchLock) {
+            mIvPlayerLock.setVisibility(View.GONE);
+            mIsShowBar = false;
+        }
 
     }
 
@@ -803,22 +841,30 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         @Override
         public boolean onSingleTapUp(MotionEvent e) {
             // 释放，手指离开触时触发(长按、滚动、滑动时，不会触发这个手势)
-            if (!mIsForbidTouch){
-                llBottomBar.setVisibility(View.VISIBLE);
-                titleBar.setVisibility(View.VISIBLE);
-            }else{
-                llBottomBar.setVisibility(View.GONE);
-                titleBar.setVisibility(View.GONE);
-            }
-            //全屏时显示锁屏按钮
-            if (mIsFullscreen || mIsAlwaysFullScreen){
-                mIvPlayerLock.setVisibility(View.VISIBLE);
-            }else{
-                mIvPlayerLock.setVisibility(View.GONE);
-            }
+//            if (!mIsForbidTouch) {
+//                llBottomBar.setVisibility(View.VISIBLE);
+//                titleBar.setVisibility(View.VISIBLE);
+//            } else {
+//                llBottomBar.setVisibility(View.GONE);
+//                titleBar.setVisibility(View.GONE);
+//            }
+//            //全屏时显示锁屏按钮
+//            if (mIsFullscreen || mIsAlwaysFullScreen) {
+//                mIvPlayerLock.setVisibility(View.VISIBLE);
+//            } else {
+//                mIvPlayerLock.setVisibility(View.GONE);
+//            }
 
 
             Log.e("触发事件---", "onSingleTapUp");
+            return false;
+        }
+
+        @Override
+        public boolean onSingleTapConfirmed(MotionEvent e) {
+            //按下并抬起时调用，确保在短时间内没有再次点击时才能出发
+            _toggleControlBar();
+            Log.e("触发事件---", "onSingleTapConfirmed");
             return false;
         }
 
@@ -882,7 +928,48 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
             }
             return true;
         }
+
+
     };
+
+    /**
+     * 开关控制栏，单击界面的时候
+     */
+    private void _toggleControlBar() {
+        mIsShowBar = !mIsShowBar;
+        _setControlBarVisible(mIsShowBar);
+        if (mIsShowBar) {
+            // 发送延迟隐藏控制栏的操作
+            mHandler.postDelayed(mHideBarRunnable, DEFAULT_HIDE_TIMEOUT);
+        }
+    }
+
+    /**
+     * 设置控制栏显示或隐藏
+     *
+     * @param isShowBar
+     */
+    private void _setControlBarVisible(boolean isShowBar) {
+        if (mIsNeverPlay) {
+            mLoadingView.setVisibility(isShowBar ? View.VISIBLE : View.GONE);
+        } else if (mIsForbidTouch) {
+            mIvPlayerLock.setVisibility(isShowBar ? View.VISIBLE : View.GONE);
+        } else {
+            llBottomBar.setVisibility(isShowBar ? View.VISIBLE : View.GONE);
+            // 全屏切换显示的控制栏不一样
+            if (mIsFullscreen) {
+                // 只在显示控制栏的时候才设置时间，因为控制栏通常不显示且单位为分钟，所以不做实时更新
+                titleBar.setVisibility(isShowBar ? View.VISIBLE : View.GONE);
+                mIvPlayerLock.setVisibility(isShowBar ? View.VISIBLE : View.GONE);
+                spRate.setVisibility(isShowBar ? View.VISIBLE : View.GONE);
+            } else {
+                titleBar.setVisibility(isShowBar ? View.VISIBLE : View.GONE);
+                mIvPlayerLock.setVisibility(View.GONE);
+                spRate.setVisibility(View.GONE);
+            }
+        }
+
+    }
 
     /**
      * 快进或者快退滑动改变进度，这里处理触摸滑动不是拉动 SeekBar

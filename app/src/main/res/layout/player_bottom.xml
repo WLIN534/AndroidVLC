@@ -74,6 +74,18 @@
         android:textColor="@android:color/white"
         android:textSize="10dp"
         android:visibility="gone" />
+    <!--设置倍速的按钮-->
+    <Spinner
+        android:id="@+id/sp_rate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:entries="@array/rate"
+        android:layout_gravity="center_vertical"
+        android:visibility="gone"
+        android:background="@drawable/tipspriceshape"
+        android:gravity="center"
+        android:layout_marginLeft="5dp"
+        android:layout_marginRight="5dp" />
 
     <ImageView
         android:id="@+id/iv_fullscreen"

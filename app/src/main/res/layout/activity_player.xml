@@ -1,32 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:layout_height="match_parent">
 
-    <include layout="@layout/player_title"
-        android:layout_alignParentTop="true"
-        android:layout_height="50dp"
-        android:layout_width="match_parent"/>
-
-    <FrameLayout
+        <FrameLayout
         android:id="@+id/video_surface_frame"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:foregroundGravity="center"
         android:background="@android:color/black"
-        android:layout_below="@+id/title_bar"
-        android:layout_centerVertical="true">
-
-        <ProgressBar
-            android:id="@+id/pb_loading"
-            android:layout_width="50dp"
-            android:layout_height="50dp"
-            android:layout_gravity="center"
-            android:gravity="center"
-            android:visibility="gone"
-            android:indeterminateBehavior="repeat"
-            android:indeterminateOnly="true"/>
+        android:foregroundGravity="center"
+        android:layout_gravity="center">
 
         <SurfaceView
             android:id="@+id/surfaceView"
@@ -35,14 +18,29 @@
             android:layout_gravity="center"
             android:focusable="false" />
 
+        <!--缓冲进度条-->
+        <ProgressBar
+            android:id="@+id/pb_loading"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:layout_gravity="center"
+            android:indeterminateBehavior="repeat"
+            android:indeterminateOnly="true"
+            android:visibility="gone" />
         <!--声音、亮度、快进/快退-->
         <include
             layout="@layout/layout_touch_gestures"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_gravity="center"/>
+            android:layout_gravity="center" />
 
     </FrameLayout>
+
+    <include
+        layout="@layout/player_title"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_gravity="top"/>
 
     <ImageView
         android:id="@+id/iv_player_lock"
@@ -52,13 +50,14 @@
         android:background="@drawable/shape_player_lock_bg"
         android:padding="10dp"
         android:src="@drawable/sel_player_lock"
-        android:layout_centerVertical="true"
-        android:visibility="gone" />
-    <include layout="@layout/player_bottom"
-        android:layout_alignParentBottom="true"
+        android:visibility="gone"
+        android:layout_gravity="center_vertical"/>
 
+    <include
+        layout="@layout/player_bottom"
+        android:layout_width="match_parent"
         android:layout_height="50dp"
-        android:layout_width="match_parent"/>
+        android:layout_gravity="bottom" />
 
 
-</RelativeLayout>
+</FrameLayout>

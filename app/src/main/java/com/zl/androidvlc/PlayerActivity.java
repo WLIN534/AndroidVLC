@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.media.AudioManager;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -15,6 +16,7 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.OrientationEventListener;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,6 +27,7 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.zl.androidvlc.utils.SystemUtil;
 import com.zl.androidvlc.utils.WindowUtils;
@@ -37,6 +40,7 @@ import org.videolan.libvlc.MediaPlayer;
 import java.util.ArrayList;
 import java.util.HashMap;
 
+import androidx.appcompat.app.ActionBar;
 import androidx.core.view.MotionEventCompat;
 import butterknife.BindView;
 
@@ -74,6 +78,8 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
     SurfaceView surfaceView;
     @BindView(R.id.iv_first_image)
     ImageView ivFirsrImage;
+    @BindView(R.id.iv_player_lock)
+    ImageView mIvPlayerLock;
 
 
     private static final String TAG = "PlayerActivity";
@@ -119,6 +125,11 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
                         sendMessageDelayed(msg, 1000 - (pos % 1000));
                     }
                     break;
+                case MSG_ENABLE_ORIENTATION:
+                    if (mOrientationListener != null) {
+                        mOrientationListener.enable();
+                    }
+                    break;
 
             }
         }
@@ -154,6 +165,8 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
     private static final int INVALID_VALUE = -1;
     // 默认隐藏控制栏时间
     private static final int DEFAULT_HIDE_TIMEOUT = 5000;
+    // 使能翻转消息
+    private static final int MSG_ENABLE_ORIENTATION = 10087;
     // 更新进度消息
     private static final int MSG_UPDATE_SEEK = 10086;
     // 音量控制
@@ -171,7 +184,20 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
     private boolean mIsNeverPlay = true;
     // 是否显示控制栏
     private boolean mIsShowBar = true;
-
+    // 是否全屏
+    private boolean mIsFullscreen;
+    // 禁止翻转，默认为禁止
+    private boolean mIsForbidOrientation = true;
+    // 是否固定全屏状态
+    private boolean mIsAlwaysFullScreen = false;
+    // 记录按退出全屏时间
+    private long mExitTime = 0;
+    // 屏幕UI可见性
+    private int mScreenUiVisibility;
+    // 屏幕旋转角度监听
+    private OrientationEventListener mOrientationListener;
+    // 锁屏
+    private boolean mIsForbidTouch = false;
     @Override
     public int setLayoutView() {
         return R.layout.activity_player;
@@ -244,6 +270,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         ivPlay.setOnClickListener(this);
         ivBack.setOnClickListener(this);
         ivFullscreen.setOnClickListener(this);
+        mIvPlayerLock.setOnClickListener(this);
         final ArrayList<String> options = new ArrayList<>();
         options.add("--file-caching=10000");//文件缓存
         options.add("--network-caching=10000");//网络缓存
@@ -252,7 +279,12 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
 
         mLibVLC = new LibVLC(this, options);
         mMediaPlayer = new MediaPlayer(mLibVLC);
-
+        mOrientationListener = new OrientationEventListener(this) {
+            @Override
+            public void onOrientationChanged(int orientation) {
+                _handleOrientation(orientation);
+            }
+        };
     }
 
     @Override
@@ -318,7 +350,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
 
                     //播放结束
                     if (mMediaPlayer.getPlayerState() == Media.State.Ended) {
-                        mLoadingView.setVisibility(View.GONE);
+
                         stop();
                     }
                 } catch (Exception e) {
@@ -352,6 +384,12 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         setSize(mVideoWidth, mVideoHeight);
+        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            _setFullScreen(true);
+        }else if (newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) {
+            _setFullScreen(false);
+        }
+        _refreshOrientationEnable();
     }
 
     @Override
@@ -362,6 +400,43 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         }
         return super.onKeyDown(keyCode, event);
     }
+
+    /**
+     * 回退、全屏时返回竖屏
+     *
+     */
+    @Override
+    public void onBackPressed() {
+        if (mIsAlwaysFullScreen){
+            exit();
+            return;
+        }else if (mIsFullscreen){
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            if (mIsForbidTouch) {
+                // 锁住状态则解锁
+                mIsForbidTouch = false;
+                mIvPlayerLock.setSelected(false);
+//                _setControlBarVisible(mIsShowBar);
+            }
+            return;
+        }
+
+        super.onBackPressed();
+    }
+    /**
+     * 从总显示全屏状态退出处理{ alwaysFullScreen()}
+     */
+    private void exit() {
+        if (System.currentTimeMillis() - mExitTime > 2000) {
+            Toast.makeText(this, "再按一次退出", Toast.LENGTH_SHORT).show();
+            mExitTime = System.currentTimeMillis();
+        } else {
+            finish();
+        }
+    }
+
+
+
 
     private void changeMediaPlayerLayout(int displayW, int displayH) {
         //* Change the video placement using the MediaPlayer API *//*
@@ -579,6 +654,9 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
                     this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
                 }
                 break;
+            case R.id.iv_player_lock:
+                _togglePlayerLock();
+                break;
         }
     }
 
@@ -589,6 +667,9 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
      * @param height 高度
      */
     private void setSize(int width, int height) {
+        if (mIsAlwaysFullScreen) {
+            return;
+        }
         mVideoWidth = width;
         mVideoHeight = height;
         if (mVideoWidth * mVideoHeight <= 1)
@@ -665,10 +746,10 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
      * 隐藏除视频外所有视图
      */
     private void hideAllView(boolean isTouchLock) {
-//        mPlayerThumb.setVisibility(View.GONE);
         mFlTouchLayout.setVisibility(View.GONE);
         titleBar.setVisibility(View.GONE);
         llBottomBar.setVisibility(View.GONE);
+        mIvPlayerLock.setVisibility(View.GONE);
 
     }
 
@@ -724,8 +805,20 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         @Override
         public boolean onSingleTapUp(MotionEvent e) {
             // 释放，手指离开触时触发(长按、滚动、滑动时，不会触发这个手势)
-            llBottomBar.setVisibility(View.VISIBLE);
-            titleBar.setVisibility(View.VISIBLE);
+            if (!mIsForbidTouch){
+                llBottomBar.setVisibility(View.VISIBLE);
+                titleBar.setVisibility(View.VISIBLE);
+            }else{
+                llBottomBar.setVisibility(View.GONE);
+                titleBar.setVisibility(View.GONE);
+            }
+            //全屏时显示锁屏按钮
+            if (mIsFullscreen || mIsAlwaysFullScreen){
+                mIvPlayerLock.setVisibility(View.VISIBLE);
+            }else{
+                mIvPlayerLock.setVisibility(View.GONE);
+            }
+
 
             Log.e("触发事件---", "onSingleTapUp");
             return false;
@@ -1057,5 +1150,90 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         ivPlay.setImageResource(R.mipmap.ic_video_play);
 
     }
+    //========锁屏/解锁===========
 
+    /**
+     * 设置全屏或窗口模式
+     *
+     * @param isFullscreen
+     */
+    private void _setFullScreen(boolean isFullscreen) {
+        mIsFullscreen = isFullscreen;
+        _handleActionBar(isFullscreen);
+        ivFullscreen.setSelected(isFullscreen);
+        mHandler.post(mHideBarRunnable);
+
+    }
+
+    /**
+     * 处理屏幕翻转
+     *
+     * @param orientation
+     */
+    private void _handleOrientation(int orientation) {
+        if (mIsNeverPlay) {
+            return;
+        }
+        if (mIsFullscreen && !mIsAlwaysFullScreen) {
+            // 根据角度进行竖屏切换，如果为固定全屏则只能横屏切换
+            if (orientation >= 0 && orientation <= 30 || orientation >= 330) {
+                // 请求屏幕翻转
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            }
+        } else {
+            // 根据角度进行横屏切换
+            if (orientation >= 60 && orientation <= 120) {
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE);
+            } else if (orientation >= 240 && orientation <= 300) {
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+            }
+        }
+    }
+
+    /**
+     * 当屏幕执行翻转操作后调用禁止翻转功能，延迟3000ms再使能翻转，避免不必要的翻转
+     */
+    private void _refreshOrientationEnable() {
+        if (!mIsForbidOrientation) {
+            mOrientationListener.disable();
+            mHandler.removeMessages(MSG_ENABLE_ORIENTATION);
+            mHandler.sendEmptyMessageDelayed(MSG_ENABLE_ORIENTATION, 3000);
+        }
+    }
+
+
+    /**
+     * 隐藏/显示 ActionBar
+     *
+     * @param isFullscreen
+     */
+    private void _handleActionBar(boolean isFullscreen) {
+        ActionBar supportActionBar = getSupportActionBar();
+        if (supportActionBar != null) {
+            if (isFullscreen) {
+                supportActionBar.hide();
+            } else {
+                supportActionBar.show();
+            }
+        }
+    }
+
+    /**
+     * 切换控制锁
+     */
+    private void _togglePlayerLock() {
+        mIsForbidTouch = !mIsForbidTouch;
+        mIvPlayerLock.setSelected(mIsForbidTouch);
+        if (mIsForbidTouch) {
+            mOrientationListener.disable();
+            hideAllView(true);
+        } else {
+            if (!mIsForbidOrientation) {
+                mOrientationListener.enable();
+            }
+            titleBar.setVisibility(View.VISIBLE);
+            llBottomBar.setVisibility(View.VISIBLE);
+
+        }
+    }
 }

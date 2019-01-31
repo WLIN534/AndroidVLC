@@ -44,6 +44,16 @@
 
     </FrameLayout>
 
+    <ImageView
+        android:id="@+id/iv_player_lock"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_marginLeft="10dp"
+        android:background="@drawable/shape_player_lock_bg"
+        android:padding="10dp"
+        android:src="@drawable/sel_player_lock"
+        android:layout_centerVertical="true"
+        android:visibility="gone" />
     <include layout="@layout/player_bottom"
         android:layout_alignParentBottom="true"
 

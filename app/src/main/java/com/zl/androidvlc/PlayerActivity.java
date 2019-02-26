@@ -29,7 +29,6 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.zl.androidvlc.utils.SystemUtil;
 import com.zl.androidvlc.utils.WindowUtils;
 
 import org.videolan.libvlc.IVLCVout;
@@ -37,7 +36,6 @@ import org.videolan.libvlc.LibVLC;
 import org.videolan.libvlc.Media;
 import org.videolan.libvlc.MediaPlayer;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 
 import androidx.appcompat.app.ActionBar;

@@ -85,8 +85,8 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
 
 
     private static final String TAG = "PlayerActivity";
-    private static final String SAMPLE_URL = "/storage/emulated/0/videos/1.flv";
-    private static final String VIDEO_URL = "/storage/emulated/0/videos/1.flv";
+    private static final String SAMPLE_URL = "/storage/emulated/0/videos/8.ts";
+    private static final String VIDEO_URL = "/storage/emulated/0/videos/8.ts";
 
     //        private static final String VIDEO_URL = "http://www.zzguifan.com:8666/system/filehandle.aspx?62999f1f12ba78a2-4a4252135d81a2b2&f=5710223";
 //    private static final String VIDEO_URL = "http://flv2.bn.netease.com/videolib3/1505/29/DCNOo7461/SD/DCNOo7461-mobile.mp4";
@@ -121,7 +121,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
             super.handleMessage(msg);
             switch (msg.what) {
                 case MSG_UPDATE_SEEK:
-                    final int pos = setProgress();
+                     long pos = setProgress();
                     if (!mIsSeeking && mIsShowBar && mMediaPlayer.isPlaying()) {
                         // 这里会重复发送MSG，已达到实时更新 Seek 的效果
                         msg = obtainMessage(MSG_UPDATE_SEEK);
@@ -220,17 +220,11 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
                     // the progress bar's position.
                     return;
                 }
-                long duration = totalTime;
-                // 计算目标位置
-                mTargetPosition = (duration * progress) / MAX_VIDEO_SEEK;
-                String desc;
-                // 对比当前位置来显示快进或后退
-                if (mTargetPosition > curPosition) {
-                    desc = generateTime(mTargetPosition) + "/" + generateTime(duration);
-                } else {
-                    desc = generateTime(mTargetPosition) + "/" + generateTime(duration);
-                }
+
+                mTargetPosition = progress;
+                String desc = generateTime(mTargetPosition) + "/" + generateTime(totalTime);
                 setFastForward(desc);
+
             }
 
             @Override
@@ -300,13 +294,13 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         ivBack.setOnClickListener(this);
         ivFullscreen.setOnClickListener(this);
         mIvPlayerLock.setOnClickListener(this);
-        final ArrayList<String> options = new ArrayList<>();
-        options.add("--file-caching=10000");//文件缓存
-        options.add("--network-caching=10000");//网络缓存
+//        final ArrayList<String> options = new ArrayList<>();
+//        options.add("--file-caching=10000");//文件缓存
+//        options.add("--network-caching=10000");//网络缓存
+//
+//        options.add("--live-caching=10000");//直播缓存
 
-        options.add("--live-caching=10000");//直播缓存
-
-        mLibVLC = new LibVLC(this, options);
+        mLibVLC = new LibVLC(this);
         mMediaPlayer = new MediaPlayer(mLibVLC);
         mOrientationListener = new OrientationEventListener(this) {
             @Override
@@ -322,7 +316,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
 
         IVLCVout ivlcVout = mMediaPlayer.getVLCVout();
         ivlcVout.setVideoView(surfaceView);
-        ivlcVout.attachViews(this);
+        ivlcVout.attachViews();
         uri = Uri.parse(VIDEO_URL);
 //        uri = Uri.parse(SAMPLE_URL);
 //        takePicture();//获取第一帧的图片
@@ -365,6 +359,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         mMediaPlayer.setEventListener(new MediaPlayer.EventListener() {
             @Override
             public void onEvent(MediaPlayer.Event event) {
+                totalTime = mMediaPlayer.getLength();
                 try {
                     if (event.getTimeChanged() == 0 || totalTime == 0 || event.getTimeChanged() > totalTime) {
                         return;
@@ -374,9 +369,10 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
                         seekBarTime.setSecondaryProgress((int) event.getBuffering());//缓冲进度
                     }
 
-
+                    seekBarTime.setMax((int) totalTime);
+                    tvTotalTime.setText(generateTime(totalTime));
                     seekBarTime.setProgress((int) event.getTimeChanged());//播放进度
-                    tvCurrentTime.setText(SystemUtil.getMediaTime((int) event.getTimeChanged()));
+                    tvCurrentTime.setText(generateTime(event.getTimeChanged()));
 
                     //播放结束
                     if (mMediaPlayer.getPlayerState() == Media.State.Ended) {
@@ -637,7 +633,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
 
         totalTime = mMediaPlayer.getLength();
         seekBarTime.setMax((int) totalTime);
-        tvTotalTime.setText(SystemUtil.getMediaTime((int) totalTime));
+        tvTotalTime.setText(generateTime(totalTime));
 
         mVideoWidth = width;
         mVideoHeight = height;
@@ -1128,17 +1124,17 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
      *
      * @return
      */
-    private int setProgress() {
+    private long setProgress() {
         if (mMediaPlayer == null || mIsSeeking) {
             return 0;
         }
         // 视频播放的当前进度
-        int position = (int) mMediaPlayer.getTime();
+        long position =  mMediaPlayer.getTime();
         // 视频总的时长
         long duration = mMediaPlayer.getLength();
         if (duration > 0) {
             // 转换为 Seek 显示的进度值
-            long pos = (long) MAX_VIDEO_SEEK * position / duration;
+            long pos = MAX_VIDEO_SEEK * position / duration;
             seekBarTime.setProgress((int) pos);
         }
         // 获取缓冲的进度百分比，并显示在 Seek 的次进度
@@ -1195,7 +1191,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
             mIsShowBar = true;
         }
 //        _setControlBarVisible(true);
-        mHandler.sendEmptyMessage(MSG_UPDATE_SEEK);
+//        mHandler.sendEmptyMessage(MSG_UPDATE_SEEK);
         // 先移除隐藏控制栏 Runnable，如果 timeout=0 则不做延迟隐藏操作
         mHandler.removeCallbacks(mHideBarRunnable);
         if (timeout != 0) {
@@ -1230,7 +1226,7 @@ PlayerActivity extends BaseActivity implements IVLCVout.OnNewVideoLayoutListener
         mIsNeverPlay = true;
         seekBarTime.setProgress(0);
         mMediaPlayer.setTime(0);
-        tvTotalTime.setText(SystemUtil.getMediaTime((int) totalTime));
+        tvTotalTime.setText(generateTime(totalTime));
         mMediaPlayer.stop();
         ivPlay.setImageResource(R.mipmap.ic_video_play);
 
